@@ -1,18 +1,17 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
-	"log"
-	"net/http"
-	"os"
-	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
+	"net/http"
+	"fmt"
+	"log"
+	"os"
+	"encoding/json"
 	"google.golang.org/api/calendar/v3"
-	"time"
+	"golang.org/x/net/context"
 	"errors"
+	"io/ioutil"
+	"golang.org/x/oauth2/google"
 )
 
 // Retrieve a token, saves the token, then returns the generated client.
@@ -81,7 +80,7 @@ func getCalenderId(calService *calendar.Service, calendarName string) (string, e
 	return "", errors.New("calendar not found")
 }
 
-func main() {
+func getEventsFromCalender(calenderName string) (Items []*calendar.Event){
 	b, err := ioutil.ReadFile("credentials.json")
 	if err != nil {
 		log.Fatalf("Unable to read client secret file: %v", err)
@@ -99,28 +98,31 @@ func main() {
 		log.Fatalf("Unable to retrieve Calendar client: %v", err)
 	}
 
-	maxTime := time.Now().AddDate(0, 0, 0).Format(time.RFC3339)
-	minTime := time.Now().AddDate(-1, -6, 0).Format(time.RFC3339)
-	calId, err :=  getCalenderId(srv, "Trained")
+	calId, err :=  getCalenderId(srv, calenderName)
 	if err != nil {
 		log.Fatalf("Unable to find calender: %v", err)
 	}
 
+	events := getEvents(srv, calId, "")
+	eventItems := events.Items
+	pageToken := events.NextPageToken
+
+	 for pageToken != "" {
+		 events = getEvents(srv, calId, pageToken)
+		 eventItems  = append(eventItems, events.Items...)
+		 pageToken = events.NextPageToken
+	 }
+	 return eventItems
+}
+
+func getEvents(srv *calendar.Service, calId string, pageToken string)(*calendar.Events) {
 	events, err := srv.Events.List(calId).OrderBy("startTime").ShowDeleted(false).
-		SingleEvents(true).TimeMin(minTime).TimeMax(maxTime).Do()
+		PageToken(pageToken).SingleEvents(true).Do()
+
 	if err != nil {
 		log.Fatalf("Unable to retrieve next ten of the user's events: %v", err)
+		panic(err)
 	}
-	fmt.Println("Past month:")
-	if len(events.Items) == 0 {
-		fmt.Println("No upcoming events found.")
-	} else {
-		for _, item := range events.Items {
-			date := item.Start.DateTime
-			if date == "" {
-				date = item.Start.Date
-			}
-			fmt.Printf("%v (%v)\n", item.Summary, date)
-		}
-	}
+
+	return events
 }
